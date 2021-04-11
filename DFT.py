@@ -6,13 +6,14 @@ from PIL import Image, ImageFont, ImageDraw
 
 images = [
     "BlueNoise16", "BlueNoise64",
-    "perlin_2", "perlin_4", "perlin_8", "perlin_16", "perlin_32", "perlin_64", "perlin_128",
+    "perlin_2", "perlin_4", "perlin_8", "perlin_16", "perlin_32", "perlin_64", "perlin_64_smooth", "perlin_64_none", "perlin_128",
     "perlin_white_same_1", "perlin_white_same_2", "perlin_white_same_3",
     "perlin_white_different_1", "perlin_white_different_2", "perlin_white_different_3",
     "perlin_blue_same_1", "perlin_blue_same_2", "perlin_blue_same_3",
     "perlin_blue_different_1", "perlin_blue_different_2", "perlin_blue_different_3",
     "perlin_ign_same_1", "perlin_ign_same_2", "perlin_ign_same_3",
-    "perlin_ign_different_1", "perlin_ign_different_2", "perlin_ign_different_3"
+    "perlin_ign_different_1", "perlin_ign_different_2", "perlin_ign_different_3",
+    "perlin_big_blue64x64", "perlin_big_blue16x16"
 ]
 
 for image in images:

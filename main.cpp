@@ -18,6 +18,13 @@ static const float c_twoPi = 2.0f * c_pi;
 typedef std::array<int, 2> IVec2;
 typedef std::array<float, 2> Vec2;
 
+enum class SmoothingMode
+{
+    None,
+    Smooth,
+    Smoother
+};
+
 template <typename T>
 T Min(T a, T b)
 {
@@ -100,6 +107,16 @@ inline float SmoothStep(float edge0, float edge1, float x)
     return x * x * (3.0f - 2.0f * x);
 }
 
+inline float SmootherStep(float edge0, float edge1, float x)
+{
+    if (edge0 == edge1)
+        return edge0;
+
+    x = Clamp((x - edge0) / (edge1 - edge0), 0.0f, 1.0f);
+
+    return 6.0f * x * x * x * x * x - 15.0f * x * x * x * x + 10.0f * x * x * x;
+}
+
 inline float Lerp(float A, float B, float t)
 {
     return A * (1.0f - t) + B * t;
@@ -112,8 +129,30 @@ inline void hash_combine(std::size_t& seed, const T& v)
     seed ^= hasher(v) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
 }
 
+float Smooth(float f, SmoothingMode smoothing)
+{
+    switch (smoothing)
+    {
+        case SmoothingMode::Smooth:
+        {
+            return SmoothStep(0.0f, 1.0f, f);
+        }
+        case SmoothingMode::Smoother:
+        {
+            return SmootherStep(0.0f, 1.0f, f);
+            break;
+        }
+        case SmoothingMode::None:
+        default:
+        {
+            return f;
+            break;
+        }
+    }
+}
+
 template <typename LAMBDA>
-float PerlinNoise(const IVec2& pixelPos, int cellSize, int octave, const LAMBDA& UnitVectorAtCell)
+float PerlinNoise(const IVec2& pixelPos, int cellSize, int octave, SmoothingMode smoothing, const LAMBDA& UnitVectorAtCell)
 {
     auto DotGridGradient = [&](const IVec2& cell, const IVec2& pos)
     {
@@ -136,8 +175,8 @@ float PerlinNoise(const IVec2& pixelPos, int cellSize, int octave, const LAMBDA&
     };
 
     // smoothstep the UVs
-    cellFraction[0] = SmoothStep(0.0f, 1.0f, cellFraction[0]);
-    cellFraction[1] = SmoothStep(0.0f, 1.0f, cellFraction[1]);
+    cellFraction[0] = Smooth(cellFraction[0], smoothing);
+    cellFraction[1] = Smooth(cellFraction[1], smoothing);
 
     // get the 4 corners of the square
     float dg_00 = DotGridGradient((cellIndex + IVec2{ 0,0 }) * cellSize, pixelPos);
@@ -154,7 +193,7 @@ float PerlinNoise(const IVec2& pixelPos, int cellSize, int octave, const LAMBDA&
 }
 
 template <typename LAMBDA>
-float PerlinNoiseOctaves(const IVec2& pos, int octaves, int cellSize, const LAMBDA& UnitVectorAtCell)
+float PerlinNoiseOctaves(const IVec2& pos, int octaves, int cellSize, SmoothingMode smoothing, const LAMBDA& UnitVectorAtCell)
 {
     float ret = 0.0f;
     int frequency = 1;
@@ -162,7 +201,7 @@ float PerlinNoiseOctaves(const IVec2& pos, int octaves, int cellSize, const LAMB
 
     for (int i = 0; i < octaves; ++i)
     {
-        ret += PerlinNoise(pos * frequency, cellSize, i, UnitVectorAtCell) * amplitude;
+        ret += PerlinNoise(pos * frequency, cellSize, i, smoothing, UnitVectorAtCell) * amplitude;
         amplitude *= 0.5;
         frequency *= 2;
     }
@@ -171,7 +210,7 @@ float PerlinNoiseOctaves(const IVec2& pos, int octaves, int cellSize, const LAMB
 }
 
 template <typename LAMBDA>
-void MakePerlinNoise(const char* fileName, int imageSize, int cellSize, int octaves, const LAMBDA& UnitVectorAtCell)
+void MakePerlinNoise(const char* fileName, int imageSize, int cellSize, int octaves, SmoothingMode smoothing, const LAMBDA& UnitVectorAtCell)
 {
     std::vector<unsigned char> pixels(imageSize * imageSize);
     std::vector<float> pixelsf(imageSize * imageSize);
@@ -184,7 +223,7 @@ void MakePerlinNoise(const char* fileName, int imageSize, int cellSize, int octa
     {
         for (int ix = 0; ix < imageSize; ++ix)
         {
-            *pixelf = PerlinNoiseOctaves(IVec2{ ix, iy }, octaves, cellSize, UnitVectorAtCell);
+            *pixelf = PerlinNoiseOctaves(IVec2{ ix, iy }, octaves, cellSize, smoothing, UnitVectorAtCell);
             minValue = Min(minValue, *pixelf);
             maxValue = Max(maxValue, *pixelf);
             pixelf++;
@@ -266,14 +305,15 @@ int main(int argc, char** argv)
             return vectors[y * c_imageSize + x];
         };
 
-        // TODO: these need larger white noise vectors
-        MakePerlinNoise("perlin_2.png", c_imageSize, 2, 1, UnitVectorAtCell);
-        MakePerlinNoise("perlin_4.png", c_imageSize, 4, 1, UnitVectorAtCell);
-        MakePerlinNoise("perlin_8.png", c_imageSize, 8, 1, UnitVectorAtCell);
-        MakePerlinNoise("perlin_16.png", c_imageSize, 16, 1, UnitVectorAtCell);
-        MakePerlinNoise("perlin_32.png", c_imageSize, 32, 1, UnitVectorAtCell);
-        MakePerlinNoise("perlin_64.png", c_imageSize, 64, 1, UnitVectorAtCell);
-        MakePerlinNoise("perlin_128.png", c_imageSize, 128, 1, UnitVectorAtCell);
+        MakePerlinNoise("perlin_2.png", c_imageSize, 2, 1, SmoothingMode::Smoother, UnitVectorAtCell);
+        MakePerlinNoise("perlin_4.png", c_imageSize, 4, 1, SmoothingMode::Smoother, UnitVectorAtCell);
+        MakePerlinNoise("perlin_8.png", c_imageSize, 8, 1, SmoothingMode::Smoother, UnitVectorAtCell);
+        MakePerlinNoise("perlin_16.png", c_imageSize, 16, 1, SmoothingMode::Smoother, UnitVectorAtCell);
+        MakePerlinNoise("perlin_32.png", c_imageSize, 32, 1, SmoothingMode::Smoother, UnitVectorAtCell);
+        MakePerlinNoise("perlin_64.png", c_imageSize, 64, 1, SmoothingMode::Smoother, UnitVectorAtCell);
+        MakePerlinNoise("perlin_64_smooth.png", c_imageSize, 64, 1, SmoothingMode::Smooth, UnitVectorAtCell);
+        MakePerlinNoise("perlin_64_none.png", c_imageSize, 64, 1, SmoothingMode::None, UnitVectorAtCell);
+        MakePerlinNoise("perlin_128.png", c_imageSize, 128, 1, SmoothingMode::Smoother, UnitVectorAtCell);
     }
 
     // white noise, with the same vectors for each octave
@@ -298,9 +338,9 @@ int main(int argc, char** argv)
             return vectors[y * c_numCells + x];
         };
 
-        MakePerlinNoise("perlin_white_same_1.png", c_imageSize, c_cellSize, 1, UnitVectorAtCell);
-        MakePerlinNoise("perlin_white_same_2.png", c_imageSize, c_cellSize, 2, UnitVectorAtCell);
-        MakePerlinNoise("perlin_white_same_3.png", c_imageSize, c_cellSize, 3, UnitVectorAtCell);
+        MakePerlinNoise("perlin_white_same_1.png", c_imageSize, c_cellSize, 1, SmoothingMode::Smoother, UnitVectorAtCell);
+        MakePerlinNoise("perlin_white_same_2.png", c_imageSize, c_cellSize, 2, SmoothingMode::Smoother, UnitVectorAtCell);
+        MakePerlinNoise("perlin_white_same_3.png", c_imageSize, c_cellSize, 3, SmoothingMode::Smoother, UnitVectorAtCell);
     }
 
     // white noise, with different vectors per octave
@@ -334,9 +374,9 @@ int main(int argc, char** argv)
             return vectors[y * c_numCells + x + offset];
         };
 
-        MakePerlinNoise("perlin_white_different_1.png", c_imageSize, c_cellSize, 1, UnitVectorAtCell);
-        MakePerlinNoise("perlin_white_different_2.png", c_imageSize, c_cellSize, 2, UnitVectorAtCell);
-        MakePerlinNoise("perlin_white_different_3.png", c_imageSize, c_cellSize, 3, UnitVectorAtCell);
+        MakePerlinNoise("perlin_white_different_1.png", c_imageSize, c_cellSize, 1, SmoothingMode::Smoother, UnitVectorAtCell);
+        MakePerlinNoise("perlin_white_different_2.png", c_imageSize, c_cellSize, 2, SmoothingMode::Smoother, UnitVectorAtCell);
+        MakePerlinNoise("perlin_white_different_3.png", c_imageSize, c_cellSize, 3, SmoothingMode::Smoother, UnitVectorAtCell);
     }
 
     // blue noise, same vectors per octave
@@ -346,6 +386,12 @@ int main(int argc, char** argv)
         {
             int w, h, c;
             uint8_t* pixels = stbi_load("BlueNoise16.png", &w, &h, &c, 4);
+
+            if (w != c_numCells || h != c_numCells)
+            {
+                printf("ERROR! Invalid size blue noise texture!");
+                return 1;
+            }
 
             for (size_t index = 0; index < c_numCells * c_numCells; ++index)
             {
@@ -367,9 +413,9 @@ int main(int argc, char** argv)
             return vectors[y * c_numCells + x];
         };
 
-        MakePerlinNoise("perlin_blue_same_1.png", c_imageSize, c_cellSize, 1, UnitVectorAtCell);
-        MakePerlinNoise("perlin_blue_same_2.png", c_imageSize, c_cellSize, 2, UnitVectorAtCell);
-        MakePerlinNoise("perlin_blue_same_3.png", c_imageSize, c_cellSize, 3, UnitVectorAtCell);
+        MakePerlinNoise("perlin_blue_same_1.png", c_imageSize, c_cellSize, 1, SmoothingMode::Smoother, UnitVectorAtCell);
+        MakePerlinNoise("perlin_blue_same_2.png", c_imageSize, c_cellSize, 2, SmoothingMode::Smoother, UnitVectorAtCell);
+        MakePerlinNoise("perlin_blue_same_3.png", c_imageSize, c_cellSize, 3, SmoothingMode::Smoother, UnitVectorAtCell);
     }
 
     // blue noise, different vectors per octave
@@ -379,6 +425,12 @@ int main(int argc, char** argv)
         {
             int w, h, c;
             uint8_t* pixels = stbi_load("BlueNoise16.png", &w, &h, &c, 4);
+
+            if (w != c_numCells || h != c_numCells)
+            {
+                printf("ERROR! Invalid size blue noise texture!");
+                return 1;
+            }
 
             for (size_t index = 0; index < c_numCells * c_numCells; ++index)
             {
@@ -402,9 +454,9 @@ int main(int argc, char** argv)
             return vectors[y * c_numCells + x];
         };
 
-        MakePerlinNoise("perlin_blue_different_1.png", c_imageSize, c_cellSize, 1, UnitVectorAtCell);
-        MakePerlinNoise("perlin_blue_different_2.png", c_imageSize, c_cellSize, 2, UnitVectorAtCell);
-        MakePerlinNoise("perlin_blue_different_3.png", c_imageSize, c_cellSize, 3, UnitVectorAtCell);
+        MakePerlinNoise("perlin_blue_different_1.png", c_imageSize, c_cellSize, 1, SmoothingMode::Smoother, UnitVectorAtCell);
+        MakePerlinNoise("perlin_blue_different_2.png", c_imageSize, c_cellSize, 2, SmoothingMode::Smoother, UnitVectorAtCell);
+        MakePerlinNoise("perlin_blue_different_3.png", c_imageSize, c_cellSize, 3, SmoothingMode::Smoother, UnitVectorAtCell);
     }
 
     // IGN, same vectors per octave
@@ -420,9 +472,9 @@ int main(int argc, char** argv)
             };
         };
 
-        MakePerlinNoise("perlin_ign_same_1.png", c_imageSize, c_cellSize, 1, UnitVectorAtCell);
-        MakePerlinNoise("perlin_ign_same_2.png", c_imageSize, c_cellSize, 2, UnitVectorAtCell);
-        MakePerlinNoise("perlin_ign_same_3.png", c_imageSize, c_cellSize, 3, UnitVectorAtCell);
+        MakePerlinNoise("perlin_ign_same_1.png", c_imageSize, c_cellSize, 1, SmoothingMode::Smoother, UnitVectorAtCell);
+        MakePerlinNoise("perlin_ign_same_2.png", c_imageSize, c_cellSize, 2, SmoothingMode::Smoother, UnitVectorAtCell);
+        MakePerlinNoise("perlin_ign_same_3.png", c_imageSize, c_cellSize, 3, SmoothingMode::Smoother, UnitVectorAtCell);
     }
 
     // IGN, different vectors per octave
@@ -444,20 +496,26 @@ int main(int argc, char** argv)
             };
         };
 
-        MakePerlinNoise("perlin_ign_different_1.png", c_imageSize, c_cellSize, 1, UnitVectorAtCell);
-        MakePerlinNoise("perlin_ign_different_2.png", c_imageSize, c_cellSize, 2, UnitVectorAtCell);
-        MakePerlinNoise("perlin_ign_different_3.png", c_imageSize, c_cellSize, 3, UnitVectorAtCell);
+        MakePerlinNoise("perlin_ign_different_1.png", c_imageSize, c_cellSize, 1, SmoothingMode::Smoother, UnitVectorAtCell);
+        MakePerlinNoise("perlin_ign_different_2.png", c_imageSize, c_cellSize, 2, SmoothingMode::Smoother, UnitVectorAtCell);
+        MakePerlinNoise("perlin_ign_different_3.png", c_imageSize, c_cellSize, 3, SmoothingMode::Smoother, UnitVectorAtCell);
     }
 
-    // blue noise, different vectors per octave
+    // larger render using blue 64x64
     {
-        // Load the 16x16 blue noise
-        std::vector<Vec2> vectors(c_numCells * c_numCells);
+        // Load the 64x64 blue noise
+        std::vector<Vec2> vectors(64 * 64);
         {
             int w, h, c;
-            uint8_t* pixels = stbi_load("BlueNoise16.png", &w, &h, &c, 4);
+            uint8_t* pixels = stbi_load("BlueNoise64.png", &w, &h, &c, 4);
 
-            for (size_t index = 0; index < c_numCells * c_numCells; ++index)
+            if (w != 64 || h != 64)
+            {
+                printf("ERROR! Invalid size blue noise texture!");
+                return 1;
+            }
+
+            for (size_t index = 0; index < 64 * 64; ++index)
             {
                 float angle = c_twoPi * float(pixels[index * 4 + 0]) / 255.0f;
                 vectors[index] = Vec2
@@ -474,26 +532,57 @@ int main(int argc, char** argv)
         {
             Vec2 offsetUV = R2(octave);
 
-            int x = (pos[0] + int(offsetUV[0] * float(c_numCells))) % c_numCells;
-            int y = (pos[1] + int(offsetUV[0] * float(c_numCells))) % c_numCells;
-            return vectors[y * c_numCells + x];
+            int x = (pos[0] + int(offsetUV[0] * float(64))) % 64;
+            int y = (pos[1] + int(offsetUV[0] * float(64))) % 64;
+            return vectors[y * 64 + x];
         };
 
-        MakePerlinNoise("perlin_blue_different_1.png", c_imageSize, c_cellSize, 1, UnitVectorAtCell);
-        MakePerlinNoise("perlin_blue_different_2.png", c_imageSize, c_cellSize, 2, UnitVectorAtCell);
-        MakePerlinNoise("perlin_blue_different_3.png", c_imageSize, c_cellSize, 3, UnitVectorAtCell);
+        MakePerlinNoise("perlin_big_blue64x64.png", 2*c_imageSize, 2*c_imageSize / 64, 1, SmoothingMode::Smoother, UnitVectorAtCell);
     }
 
-    // TODO: maybe try a larger resolution blue noise?
+    // larger render using blue 16x16
+    {
+        // Load the 16x16 blue noise
+        std::vector<Vec2> vectors(16 * 16);
+        {
+            int w, h, c;
+            uint8_t* pixels = stbi_load("BlueNoise16.png", &w, &h, &c, 4);
+
+            if (w != 16 || h != 16)
+            {
+                printf("ERROR! Invalid size blue noise texture!");
+                return 1;
+            }
+
+            for (size_t index = 0; index < 16 * 16; ++index)
+            {
+                float angle = c_twoPi * float(pixels[index * 4 + 0]) / 255.0f;
+                vectors[index] = Vec2
+                {
+                    cos(angle),
+                    sin(angle)
+                };
+            }
+
+            stbi_image_free(pixels);
+        }
+
+        auto UnitVectorAtCell = [&vectors](const IVec2& pos, int octave)
+        {
+            Vec2 offsetUV = R2(octave);
+
+            int x = (pos[0] + int(offsetUV[0] * float(16))) % 16;
+            int y = (pos[1] + int(offsetUV[0] * float(16))) % 16;
+            return vectors[y * 16 + x];
+        };
+
+        MakePerlinNoise("perlin_big_blue16x16.png", 4 * 2 * c_imageSize, 4 * 2 * c_imageSize / 16, 1, SmoothingMode::Smoother, UnitVectorAtCell);
+    }
 
     system("python DFT.py");
 }
 
 /*
-
-TODO:
-
-? should multiple octaves use the same noise or different? turns out either is ok per eevee? maybe do and show both
 
 Eevee's perlin noise tutorial: https://eev.ee/blog/2016/05/29/perlin-noise/
  * Also use the other method she talks about of selecting pre-made vectora.
