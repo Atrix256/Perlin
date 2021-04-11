@@ -13,7 +13,7 @@ images = [
     "perlin_blue_different_1", "perlin_blue_different_2", "perlin_blue_different_3",
     "perlin_ign_same_1", "perlin_ign_same_2", "perlin_ign_same_3",
     "perlin_ign_different_1", "perlin_ign_different_2", "perlin_ign_different_3",
-    "perlin_big_blue64x64", "perlin_big_blue16x16"
+    "perlin_big_blue64x64", "perlin_big_blue16x16", "perlin_big_white64x64", "perlin_big_white16x16"
 ]
 
 for image in images:

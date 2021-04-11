@@ -537,7 +537,7 @@ int main(int argc, char** argv)
             return vectors[y * 64 + x];
         };
 
-        MakePerlinNoise("perlin_big_blue64x64.png", 2*c_imageSize, 2*c_imageSize / 64, 1, SmoothingMode::Smoother, UnitVectorAtCell);
+        MakePerlinNoise("perlin_big_blue64x64.png", 4 * c_imageSize, 4 * c_imageSize / 64, 1, SmoothingMode::Smoother, UnitVectorAtCell);
     }
 
     // larger render using blue 16x16
@@ -576,8 +576,69 @@ int main(int argc, char** argv)
             return vectors[y * 16 + x];
         };
 
-        MakePerlinNoise("perlin_big_blue16x16.png", 4 * 2 * c_imageSize, 4 * 2 * c_imageSize / 16, 1, SmoothingMode::Smoother, UnitVectorAtCell);
+        MakePerlinNoise("perlin_big_blue16x16.png", 4 * c_imageSize, 4 * c_imageSize / 16, 1, SmoothingMode::Smoother, UnitVectorAtCell);
     }
+
+
+
+    // larger render using white 64x64
+    {
+        // Load the 64x64 blue noise
+        std::vector<Vec2> vectors(64 * 64);
+
+        std::mt19937 rng;
+        std::uniform_real_distribution<float> dist(0.0f, c_twoPi);
+        for (Vec2& v : vectors)
+        {
+            float angle = dist(rng);
+            v = Vec2
+            {
+                cos(angle),
+                sin(angle)
+            };
+        }
+
+        auto UnitVectorAtCell = [&vectors](const IVec2& pos, int octave)
+        {
+            Vec2 offsetUV = R2(octave);
+
+            int x = (pos[0] + int(offsetUV[0] * float(64))) % 64;
+            int y = (pos[1] + int(offsetUV[0] * float(64))) % 64;
+            return vectors[y * 64 + x];
+        };
+
+        MakePerlinNoise("perlin_big_white64x64.png", 4 * c_imageSize, 4 * c_imageSize / 64, 1, SmoothingMode::Smoother, UnitVectorAtCell);
+    }
+
+    // larger render using blue 16x16
+    {
+        // Load the 16x16 blue noise
+        std::vector<Vec2> vectors(16 * 16);
+
+        std::mt19937 rng;
+        std::uniform_real_distribution<float> dist(0.0f, c_twoPi);
+        for (Vec2& v : vectors)
+        {
+            float angle = dist(rng);
+            v = Vec2
+            {
+                cos(angle),
+                sin(angle)
+            };
+        }
+
+        auto UnitVectorAtCell = [&vectors](const IVec2& pos, int octave)
+        {
+            Vec2 offsetUV = R2(octave);
+
+            int x = (pos[0] + int(offsetUV[0] * float(16))) % 16;
+            int y = (pos[1] + int(offsetUV[0] * float(16))) % 16;
+            return vectors[y * 16 + x];
+        };
+
+        MakePerlinNoise("perlin_big_white16x16.png", 4 * c_imageSize, 4 * c_imageSize / 16, 1, SmoothingMode::Smoother, UnitVectorAtCell);
+    }
+
 
     system("python DFT.py");
 }
@@ -585,7 +646,6 @@ int main(int argc, char** argv)
 /*
 
 Eevee's perlin noise tutorial: https://eev.ee/blog/2016/05/29/perlin-noise/
- * Also use the other method she talks about of selecting pre-made vectora.
- * Envies post talks about clumps being bad, so blue seems like a good idea? might need to check out the paper.
+ * the post talks about clumps being bad, so i tried blue noise but don't see much difference.
 
 */
