@@ -108,29 +108,11 @@ inline void hash_combine(std::size_t& seed, const T& v)
 }
 
 template <typename LAMBDA>
-float PerlinNoise(const IVec2& pixelPos, int cellSize, const LAMBDA& UnitVectorAtCell)
+float PerlinNoise(const IVec2& pixelPos, int cellSize, int octave, const LAMBDA& UnitVectorAtCell)
 {
-    auto RandomUnitVectorAtPos = [](const IVec2& pos)
-    {
-        size_t seed = 0x1337beef;
-        hash_combine(seed, pos[0]);
-        hash_combine(seed, pos[1]);
-
-        std::mt19937 rng((unsigned int)seed);
-        std::uniform_real_distribution<float> dist(0.0f, c_twoPi);
-
-        float angle = dist(rng);
-
-        return Vec2
-        {
-            cos(angle),
-            sin(angle)
-        };
-    };
-
     auto DotGridGradient = [&](const IVec2& cell, const IVec2& pos)
     {
-        Vec2 gradient = RandomUnitVectorAtPos(cell);
+        Vec2 gradient = UnitVectorAtCell(cell / cellSize, octave);
         IVec2 delta = pos - cell;
         Vec2 deltaf = Vec2{ (float)delta[0], (float)delta[1] } / float(cellSize);
         return Dot(deltaf, gradient);
@@ -175,7 +157,7 @@ float PerlinNoiseOctaves(const IVec2& pos, int octaves, int cellSize, const LAMB
 
     for (int i = 0; i < octaves; ++i)
     {
-        ret += PerlinNoise(pos * frequency, cellSize, UnitVectorAtCell) * amplitude;
+        ret += PerlinNoise(pos * frequency, cellSize, i, UnitVectorAtCell) * amplitude;
         amplitude *= 0.5;
         frequency *= 2;
     }
@@ -226,6 +208,7 @@ int main(int argc, char** argv)
     static const int c_cellSize = 16;
     static const int c_numCells = c_imageSize / c_cellSize;
 
+    // white noise, with the same vectors for each octave
     {
         std::vector<Vec2> vectors(c_numCells * c_numCells);
         std::mt19937 rng;
@@ -242,13 +225,86 @@ int main(int argc, char** argv)
 
         auto UnitVectorAtCell = [&vectors](const IVec2& pos, int octave)
         {
-            return vectors[pos[1] * c_numCells + pos[0]];
+            int x = pos[0] % c_numCells;
+            int y = pos[1] % c_numCells;
+            return vectors[y * c_numCells + x];
         };
 
         MakePerlinNoise("perlin_white_same_1.png", c_imageSize, c_cellSize, 1, UnitVectorAtCell);
         MakePerlinNoise("perlin_white_same_2.png", c_imageSize, c_cellSize, 2, UnitVectorAtCell);
         MakePerlinNoise("perlin_white_same_3.png", c_imageSize, c_cellSize, 3, UnitVectorAtCell);
     }
+
+    // white noise, with different vectors per octave
+    {
+        std::vector<Vec2> vectors(c_numCells * c_numCells * 3);
+        std::mt19937 rng;
+        std::uniform_real_distribution<float> dist(0.0f, c_twoPi);
+        for (Vec2& v : vectors)
+        {
+            float angle = dist(rng);
+            v = Vec2
+            {
+                cos(angle),
+                sin(angle)
+            };
+        }
+
+        auto UnitVectorAtCell = [&vectors](const IVec2& pos, int octave)
+        {
+            int x = pos[0] % c_numCells;
+            int y = pos[1] % c_numCells;
+
+            int offset = 0;
+            switch (octave)
+            {
+                case 0: offset = c_numCells * c_numCells * 0; break;
+                case 1: offset = c_numCells * c_numCells * 1; break;
+                case 2: offset = c_numCells * c_numCells * 2; break;
+            }
+
+            return vectors[y * c_numCells + x + offset];
+        };
+
+        MakePerlinNoise("perlin_white_different_1.png", c_imageSize, c_cellSize, 1, UnitVectorAtCell);
+        MakePerlinNoise("perlin_white_different_2.png", c_imageSize, c_cellSize, 2, UnitVectorAtCell);
+        MakePerlinNoise("perlin_white_different_3.png", c_imageSize, c_cellSize, 3, UnitVectorAtCell);
+    }
+
+    // blue noise, same vectors per octave
+    {
+        // Load the 16x16 blue noise
+        std::vector<Vec2> vectors(c_numCells * c_numCells);
+        {
+            int w, h, c;
+            uint8_t* pixels = stbi_load("BlueNoise16.png", &w, &h, &c, 4);
+
+            for (size_t index = 0; index < c_numCells * c_numCells; ++index)
+            {
+                float angle = c_twoPi * float(pixels[index * 4 + 0]) / 255.0f;
+                vectors[index] = Vec2
+                {
+                    cos(angle),
+                    sin(angle)
+                };
+            }
+
+            stbi_image_free(pixels);
+        }
+
+        auto UnitVectorAtCell = [&vectors](const IVec2& pos, int octave)
+        {
+            int x = pos[0] % c_numCells;
+            int y = pos[1] % c_numCells;
+            return vectors[y * c_numCells + x];
+        };
+
+        MakePerlinNoise("perlin_blue_same_1.png", c_imageSize, c_cellSize, 1, UnitVectorAtCell);
+        MakePerlinNoise("perlin_blue_same_2.png", c_imageSize, c_cellSize, 2, UnitVectorAtCell);
+        MakePerlinNoise("perlin_blue_same_3.png", c_imageSize, c_cellSize, 3, UnitVectorAtCell);
+    }
+
+    // TODO: blue with different vectors per ocatve. offset read by R2 sequence per octave index.
 }
 
 /*
