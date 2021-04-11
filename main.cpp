@@ -86,6 +86,11 @@ T Clamp(T value, T min, T max)
         return value;
 }
 
+float Fract(float x)
+{
+    return x - floorf(x);
+}
+
 inline float SmoothStep(float edge0, float edge1, float x)
 {
     if (edge0 == edge1)
@@ -202,11 +207,74 @@ void MakePerlinNoise(const char* fileName, int imageSize, int cellSize, int octa
     stbi_write_png(fileName, imageSize, imageSize, 1, pixels.data(), 0);
 }
 
+Vec2 R2(int index)
+{
+    // Generalized golden ratio to 2d.
+    // Solution to x^3 = x + 1
+    // AKA plastic constant.
+    // from http://extremelearning.com.au/unreasonable-effectiveness-of-quasirandom-sequences/
+    float g = 1.32471795724474602596f;
+    float a1 = 1.0f / g;
+    float a2 = 1.0f / (g * g);
+
+    float x = 0.5f;
+    float y = 0.5f;
+    for (int i = 0; i < index; ++i)
+    {
+        x = Fract(x + a1);
+        y = Fract(y + a2);
+    }
+    return Vec2{ x, y };
+}
+
+// Interleaved Gradient Noise - a spatial low discrepancy sequence with good properties under TAA that does 3x3 neighborhood
+// sampling for history rejection.
+// Talked about in http://www.iryoku.com/next-generation-post-processing-in-call-of-duty-advanced-warfare
+// Presented at siggraph in 2014 in http://advances.realtimerendering.com/s2014/ part 1.
+float IGN(int _x, int _y)
+{
+    float x = float(_x);
+    float y = float(_y);
+    return Fract(52.9829189f * Fract(0.06711056f * float(x) + 0.00583715f * float(y)));
+}
+
 int main(int argc, char** argv)
 {
     static const int c_imageSize = 256;
     static const int c_cellSize = 16;
     static const int c_numCells = c_imageSize / c_cellSize;
+
+    // A study in different sized cells
+    {
+        std::vector<Vec2> vectors(c_imageSize * c_imageSize);
+        std::mt19937 rng;
+        std::uniform_real_distribution<float> dist(0.0f, c_twoPi);
+        for (Vec2& v : vectors)
+        {
+            float angle = dist(rng);
+            v = Vec2
+            {
+                cos(angle),
+                sin(angle)
+            };
+        }
+
+        auto UnitVectorAtCell = [&vectors](const IVec2& pos, int octave)
+        {
+            int x = pos[0];
+            int y = pos[1];
+            return vectors[y * c_imageSize + x];
+        };
+
+        // TODO: these need larger white noise vectors
+        MakePerlinNoise("perlin_2.png", c_imageSize, 2, 1, UnitVectorAtCell);
+        MakePerlinNoise("perlin_4.png", c_imageSize, 4, 1, UnitVectorAtCell);
+        MakePerlinNoise("perlin_8.png", c_imageSize, 8, 1, UnitVectorAtCell);
+        MakePerlinNoise("perlin_16.png", c_imageSize, 16, 1, UnitVectorAtCell);
+        MakePerlinNoise("perlin_32.png", c_imageSize, 32, 1, UnitVectorAtCell);
+        MakePerlinNoise("perlin_64.png", c_imageSize, 64, 1, UnitVectorAtCell);
+        MakePerlinNoise("perlin_128.png", c_imageSize, 128, 1, UnitVectorAtCell);
+    }
 
     // white noise, with the same vectors for each octave
     {
@@ -304,26 +372,131 @@ int main(int argc, char** argv)
         MakePerlinNoise("perlin_blue_same_3.png", c_imageSize, c_cellSize, 3, UnitVectorAtCell);
     }
 
-    // TODO: blue with different vectors per ocatve. offset read by R2 sequence per octave index.
+    // blue noise, different vectors per octave
+    {
+        // Load the 16x16 blue noise
+        std::vector<Vec2> vectors(c_numCells * c_numCells);
+        {
+            int w, h, c;
+            uint8_t* pixels = stbi_load("BlueNoise16.png", &w, &h, &c, 4);
+
+            for (size_t index = 0; index < c_numCells * c_numCells; ++index)
+            {
+                float angle = c_twoPi * float(pixels[index * 4 + 0]) / 255.0f;
+                vectors[index] = Vec2
+                {
+                    cos(angle),
+                    sin(angle)
+                };
+            }
+
+            stbi_image_free(pixels);
+        }
+
+        auto UnitVectorAtCell = [&vectors](const IVec2& pos, int octave)
+        {
+            Vec2 offsetUV = R2(octave);
+
+            int x = (pos[0] + int(offsetUV[0] * float(c_numCells))) % c_numCells;
+            int y = (pos[1] + int(offsetUV[0] * float(c_numCells))) % c_numCells;
+            return vectors[y * c_numCells + x];
+        };
+
+        MakePerlinNoise("perlin_blue_different_1.png", c_imageSize, c_cellSize, 1, UnitVectorAtCell);
+        MakePerlinNoise("perlin_blue_different_2.png", c_imageSize, c_cellSize, 2, UnitVectorAtCell);
+        MakePerlinNoise("perlin_blue_different_3.png", c_imageSize, c_cellSize, 3, UnitVectorAtCell);
+    }
+
+    // IGN, same vectors per octave
+    {
+        auto UnitVectorAtCell = [](const IVec2& pos, int octave)
+        {
+            float angle = IGN(pos[0], pos[1]);
+
+            return Vec2
+            {
+                cos(angle),
+                sin(angle)
+            };
+        };
+
+        MakePerlinNoise("perlin_ign_same_1.png", c_imageSize, c_cellSize, 1, UnitVectorAtCell);
+        MakePerlinNoise("perlin_ign_same_2.png", c_imageSize, c_cellSize, 2, UnitVectorAtCell);
+        MakePerlinNoise("perlin_ign_same_3.png", c_imageSize, c_cellSize, 3, UnitVectorAtCell);
+    }
+
+    // IGN, different vectors per octave
+    {
+        auto UnitVectorAtCell = [](const IVec2& pos, int octave)
+        {
+            Vec2 offsetUV = R2(octave);
+
+            IVec2 offsetPos;
+            offsetPos[0] = pos[0] + int(offsetUV[0] * float(c_numCells));
+            offsetPos[1] = pos[1] + int(offsetUV[1] * float(c_numCells));
+
+            float angle = IGN(offsetPos[0], offsetPos[1]);
+
+            return Vec2
+            {
+                cos(angle),
+                sin(angle)
+            };
+        };
+
+        MakePerlinNoise("perlin_ign_different_1.png", c_imageSize, c_cellSize, 1, UnitVectorAtCell);
+        MakePerlinNoise("perlin_ign_different_2.png", c_imageSize, c_cellSize, 2, UnitVectorAtCell);
+        MakePerlinNoise("perlin_ign_different_3.png", c_imageSize, c_cellSize, 3, UnitVectorAtCell);
+    }
+
+    // blue noise, different vectors per octave
+    {
+        // Load the 16x16 blue noise
+        std::vector<Vec2> vectors(c_numCells * c_numCells);
+        {
+            int w, h, c;
+            uint8_t* pixels = stbi_load("BlueNoise16.png", &w, &h, &c, 4);
+
+            for (size_t index = 0; index < c_numCells * c_numCells; ++index)
+            {
+                float angle = c_twoPi * float(pixels[index * 4 + 0]) / 255.0f;
+                vectors[index] = Vec2
+                {
+                    cos(angle),
+                    sin(angle)
+                };
+            }
+
+            stbi_image_free(pixels);
+        }
+
+        auto UnitVectorAtCell = [&vectors](const IVec2& pos, int octave)
+        {
+            Vec2 offsetUV = R2(octave);
+
+            int x = (pos[0] + int(offsetUV[0] * float(c_numCells))) % c_numCells;
+            int y = (pos[1] + int(offsetUV[0] * float(c_numCells))) % c_numCells;
+            return vectors[y * c_numCells + x];
+        };
+
+        MakePerlinNoise("perlin_blue_different_1.png", c_imageSize, c_cellSize, 1, UnitVectorAtCell);
+        MakePerlinNoise("perlin_blue_different_2.png", c_imageSize, c_cellSize, 2, UnitVectorAtCell);
+        MakePerlinNoise("perlin_blue_different_3.png", c_imageSize, c_cellSize, 3, UnitVectorAtCell);
+    }
+
+    // TODO: maybe try a larger resolution blue noise?
+
+    system("python DFT.py");
 }
 
 /*
 
 TODO:
-* make perlin noise with white noise
-* make perlin noise with blue noise
-* make perlin nosie with IGN for fun?
-* DFT them all? with a python script!
-* check notes in your email.
-* could omp this to make it faster
 
 ? should multiple octaves use the same noise or different? turns out either is ok per eevee? maybe do and show both
 
-? single ring images / DFTs vs multi ring.
-? vary params like number of octaves and cell size. could make a grid of params i guess and label em with python?
-
 Eevee's perlin noise tutorial: https://eev.ee/blog/2016/05/29/perlin-noise/
- * Also use the other method he talks about of selecting pre-made vectora.
- * Envies post talks about clumps being bad, so blue seems like a good idea.
+ * Also use the other method she talks about of selecting pre-made vectora.
+ * Envies post talks about clumps being bad, so blue seems like a good idea? might need to check out the paper.
 
 */
